@@ -33,6 +33,7 @@
 
 #include "xuartps.h"
 #include "xuartps_hw.h"
+#include "xtmrctr.h"
 
 #include "xil_printf.h"
 
@@ -42,6 +43,8 @@
 #define UART_DEVICE_ID1 0
 
 XUartPs UART_PS;
+XTmrCtr TIMER1;
+XTmrCtr *TIMER = &TIMER1;
 
 /***************** Macros *********************/
 #define NUMBER_OF_INPUT_WORDS 520  // length of an input vector
@@ -52,13 +55,16 @@ XUartPs UART_PS;
 
 
 #define FIFO_DEV_ID	   	XPAR_AXI_FIFO_0_DEVICE_ID
+#define TMR_DEV_ID		XTC_TIMER_0
 
 #define TIMEOUT_VALUE 1<<20; // timeout for reception
 
 /************************** Variable Definitions *****************************/
 u16 DeviceId = FIFO_DEV_ID;
+u16 tmr_DeviceId = TMR_DEV_ID;
 XLlFifo FifoInstance; 	// Device instance
 XLlFifo *InstancePtr = &FifoInstance; // Device pointer
+
 
 int test_input_memory [NUMBER_OF_TEST_VECTORS*NUMBER_OF_INPUT_WORDS]; // 4 inputs * 2
 int test_result_expected_memory [NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS];// 4 outputs *2
@@ -72,9 +78,13 @@ int main()
 	int Status = XST_SUCCESS;
 	int word_cnt, word_cnt_2, word_cnt_3, test_case_cnt = 0;
 	int success;
+	u8 tmr_cnt = 0;
+	int time1 = 0;
+
 
 	/************************** Initializations *****************************/
 	XLlFifo_Config *Config;
+	XTmrCtr_Initialize(TIMER,tmr_DeviceId);
 
 	/* Initialize the Device Configuration Interface driver */
 	Config = XLlFfio_LookupConfig(DeviceId);
@@ -106,6 +116,7 @@ int main()
 
 	/************** Run a software version of the hardware function to validate results ************/
 	// instead of hard-coding the results in test_result_expected_memory
+	XTmrCtr_Start(TIMER,tmr_cnt);
 	int sum;
 	for (test_case_cnt=0 ; test_case_cnt < NUMBER_OF_TEST_VECTORS ; test_case_cnt++){
 		sum = 0;
@@ -124,12 +135,18 @@ int main()
 			}
 		}
 	}
+	XTmrCtr_Stop(TIMER,tmr_cnt);
+	time1 = XTmrCtr_GetValue(TIMER,tmr_cnt);
+
+	printf("Time1: %dus\n",time1);
 
 	for (test_case_cnt=0 ; test_case_cnt < NUMBER_OF_TEST_VECTORS ; test_case_cnt++){
 
 		/******************** Input to Coprocessor : Transmit the Data Stream ***********************/
 
 		//xil_printf(" Transmitting Data for test case %d ... \r\n", test_case_cnt);
+		//Timer start
+		XTmrCtr_Reset(TIMER,tmr_cnt);
 
 		/* Writing into the FIFO Transmit Port Buffer */
 		for (word_cnt=0 ; word_cnt < NUMBER_OF_INPUT_WORDS ; word_cnt++){
@@ -146,10 +163,12 @@ int main()
 
 		}
 		/* Transmission Complete */
+		XTmrCtr_Start(TIMER,tmr_cnt);
+
 
 		/******************** Output from Coprocessor : Receive the Data Stream ***********************/
 
-		//xil_printf(" Receiving data for test case %d ... \r\n", test_case_cnt);
+		xil_printf(" Receiving data for test case %d ... \r\n", test_case_cnt);
 
 		int timeout_count = TIMEOUT_VALUE;
 		// wait for coprocessor to send data, subject to a timeout
@@ -169,9 +188,13 @@ int main()
 			// read one word at a time
 			result_memory[word_cnt+test_case_cnt*NUMBER_OF_OUTPUT_WORDS] = XLlFifo_RxGetWord(InstancePtr);
 		}
+		//Timer stops
+		XTmrCtr_Stop(TIMER,tmr_cnt);
 
-		//xil_printf("Success receiving data! \r\n");
-//
+		time1 = XTmrCtr_GetValue(TIMER,tmr_cnt);
+
+		xil_printf("Success receiving data! \r\n");
+  		printf("Time2: %dus\n",time1);
 		for(word_cnt = 0; word_cnt < NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS; word_cnt++){
 			//xil_printf("%d,",result_memory[word_cnt]);
 		}
@@ -190,6 +213,10 @@ int main()
 	/************************** Checking correctness of results *****************************/
 
 	success = 1;
+	printf("Time: %dus\n",time1);
+	for(word_cnt=0 ; word_cnt < NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS; word_cnt++){
+		printf("%d\n",result_memory[word_cnt]);
+	}
 
 	/* Compare the data send with the data received */
 	//xil_printf(" Comparing data ...\r\n");
@@ -202,11 +229,9 @@ int main()
 		return XST_FAILURE;
 	}
 
-	//xil_printf("Test Success\r\n");
+	xil_printf("Test Success\r\n");
 
-	for(word_cnt=0 ; word_cnt < NUMBER_OF_TEST_VECTORS*NUMBER_OF_OUTPUT_WORDS; word_cnt++){
-		printf("%d\n",result_memory[word_cnt]);
-	}
+
 
 	return XST_SUCCESS;
 }

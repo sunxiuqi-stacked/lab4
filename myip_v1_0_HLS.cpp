@@ -45,16 +45,16 @@ void myip_v1_0_HLS(hls::stream<AXIS_wLAST>& S_AXIS, hls::stream<AXIS_wLAST>& M_A
 	//ap_uint<8> sum = 0; // using arbitrary precision
 	int sum = 0;		 // using 32 bit precision
 	int input_memory_A[A_SIZE];
-//#pragma HLS array_parition variable=input_memory_A block factor=2
+#pragma HLS array_partition variable=input_memory_A block factor=2
 	int input_memory_B[B_SIZE];
-//#pragma HLS array_parition variable=input_memory_B block factor=2
+#pragma HLS array_partition variable=input_memory_B block factor=2
 	int res_memory[NUMBER_OF_OUTPUT_WORDS];
-//#pragma HLS array_parition variable=res_memory block factor=2
+#pragma HLS array_partition variable=res_memory block factor=2
 
 	AXIS_wLAST read_input, write_output;
 
 		myip_v1_0_HLS_for1:for(word_cnt = 0; word_cnt < A_SIZE; word_cnt++){
-#pragma HLS dataflow
+#pragma HLS unroll factor=8
 			read_input = S_AXIS.read();
 			// read_input is the element (data + other signals) received by our ip through S_AXIS in one clock cycle (which contains one word).
 			// read() extracts it from the stream. Overloaded operator >> can also be used.
@@ -64,7 +64,7 @@ void myip_v1_0_HLS(hls::stream<AXIS_wLAST>& S_AXIS, hls::stream<AXIS_wLAST>& M_A
 		}
 
 		myip_v1_0_HLS_for2:for(word_cnt = 0; word_cnt < B_SIZE; word_cnt++){
-#pragma HLS dataflow
+#pragma HLS unroll factor=2
 			read_input = S_AXIS.read();
 			// read_input is the element (data + other signals) received by our ip through S_AXIS in one clock cycle (which contains one word).
 			// read() extracts it from the stream. Overloaded operator >> can also be used.
@@ -77,7 +77,7 @@ void myip_v1_0_HLS(hls::stream<AXIS_wLAST>& S_AXIS, hls::stream<AXIS_wLAST>& M_A
 #pragma HLS pipeline II=1
 			sum += input_memory_A[word_cnt]*input_memory_B[word_cnt2];
 			if((word_cnt+1)%B_SIZE==0){
-				res_memory[word_cnt3] = sum;
+				res_memory[word_cnt3] = sum/256;
 				word_cnt3++;
 				sum = 0;
 				word_cnt2 = 0;
